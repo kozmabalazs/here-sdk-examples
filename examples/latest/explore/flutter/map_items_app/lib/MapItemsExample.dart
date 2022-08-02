@@ -21,7 +21,9 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:here_sdk/animation.dart';
 import 'package:here_sdk/core.dart';
 import 'package:here_sdk/gestures.dart';
 import 'package:here_sdk/mapview.dart';
@@ -47,8 +49,7 @@ class MapItemsExample {
         _hereMapController = hereMapController {
     double distanceToEarthInMeters = 8000;
     MapMeasure mapMeasureZoom = MapMeasure(MapMeasureKind.distance, distanceToEarthInMeters);
-    _hereMapController.camera
-        .lookAtPointWithMeasure(GeoCoordinates(52.51760485151816, 13.380312380535472), mapMeasureZoom);
+    _hereMapController.camera.lookAtPointWithMeasure(GeoCoordinates(52.51760485151816, 13.380312380535472), mapMeasureZoom);
 
     // Setting a tap handler to pick markers from map.
     _setTapGestureHandler();
@@ -259,7 +260,6 @@ class MapItemsExample {
   }
 
   void _addFlatMarker(GeoCoordinates geoCoordinates) async {
-
     Uint8List imagePixelData = await _loadFileAsUint8List('assets/poi.png');
     MapImage mapImage = MapImage.withPixelDataAndImageFormat(imagePixelData, ImageFormat.png);
 
@@ -268,7 +268,7 @@ class MapItemsExample {
     double scaleFactor = 0.5;
 
     // With DENSITY_INDEPENDENT_PIXELS the map marker will have a constant size on the screen regardless if the map is zoomed in or out.
-    MapMarker3D mapMarker3D = MapMarker3D.fromImage(geoCoordinates,mapImage, scaleFactor, RenderSizeUnit.densityIndependentPixels);
+    MapMarker3D mapMarker3D = MapMarker3D.fromImage(geoCoordinates, mapImage, scaleFactor, RenderSizeUnit.densityIndependentPixels);
 
     _hereMapController.mapScene.addMapMarker3d(mapMarker3D);
     _mapMarker3DList.add(mapMarker3D);
@@ -352,23 +352,23 @@ class MapItemsExample {
       _handlePickedMapMarkerClusters(pickMapItemsResult);
 
       // Note that 3D map markers can't be picked yet. Only marker, polgon and polyline map items are pickable.
-      List<MapMarker> mapMarkerList = pickMapItemsResult.markers;
-      int listLength = mapMarkerList.length;
-      if (listLength == 0) {
-        print("No map markers found.");
-        return;
-      }
+      // List<MapMarker> mapMarkerList = pickMapItemsResult.markers;
+      // int listLength = mapMarkerList.length;
+      // if (listLength == 0) {
+      //   print("No map markers found.");
+      //   return;
+      // }
 
-      MapMarker topmostMapMarker = mapMarkerList.first;
-      Metadata? metadata = topmostMapMarker.metadata;
-      if (metadata != null) {
-        String message = metadata.getString("key_poi") ?? "No message found.";
-
-        _showDialog("Map Marker picked", message);
-        return;
-      }
-
-      _showDialog("Map Marker picked", "No metadata attached.");
+      // MapMarker topmostMapMarker = mapMarkerList.first;
+      // Metadata? metadata = topmostMapMarker.metadata;
+      // if (metadata != null) {
+      //   String message = metadata.getString("key_poi") ?? "No message found.";
+      //
+      //   _showDialog("Map Marker picked", message);
+      //   return;
+      // }
+      //
+      // _showDialog("Map Marker picked", "No metadata attached.");
     });
   }
 
@@ -384,15 +384,27 @@ class MapItemsExample {
       // This cluster does not contain any MapMarker items.
       return;
     }
-    if (clusterSize == 1) {
-      _showDialog("Map marker picked", "This MapMarker belongs to a cluster.");
-    } else {
-      int totalSize = topmostGrouping.parent.markers.length;
-      _showDialog(
-          "Map marker cluster picked",
-          "Number of contained markers in this cluster: $clusterSize." +
-              "Total number of markers in this MapMarkerCluster: $totalSize.");
+
+    final coordinates = topmostGrouping.markers.map((e) => e.coordinates).toList();
+    final geoBox = GeoBox.containingGeoCoordinates(coordinates);
+    if (geoBox == null) {
+      return;
     }
+    _hereMapController.camera.flyToAreaWithOptionsAndViewRectangle(
+      geoBox,
+      _hereMapController.paddedViewport(const EdgeInsets.all(32.0)),
+      MapCameraFlyToOptions.withDuration(MapConstants.mapAnimationDuration, 0.0),
+    );
+
+    // if (clusterSize == 1) {
+    //   _showDialog("Map marker picked", "This MapMarker belongs to a cluster.");
+    // } else {
+    //   int totalSize = topmostGrouping.parent.markers.length;
+    //   _showDialog(
+    //       "Map marker cluster picked",
+    //       "Number of contained markers in this cluster: $clusterSize." +
+    //           "Total number of markers in this MapMarkerCluster: $totalSize.");
+    // }
   }
 
   void _tiltMap() {
@@ -408,8 +420,8 @@ class MapItemsExample {
   }
 
   GeoCoordinates _createRandomGeoCoordinatesAroundMapCenter() {
-    GeoCoordinates? centerGeoCoordinates = _hereMapController.viewToGeoCoordinates(
-        Point2D(_hereMapController.viewportSize.width / 2, _hereMapController.viewportSize.height / 2));
+    GeoCoordinates? centerGeoCoordinates =
+        _hereMapController.viewToGeoCoordinates(Point2D(_hereMapController.viewportSize.width / 2, _hereMapController.viewportSize.height / 2));
     if (centerGeoCoordinates == null) {
       // Should never happen for center coordinates.
       throw Exception("CenterGeoCoordinates are null");
@@ -422,4 +434,42 @@ class MapItemsExample {
   double _getRandom(double min, double max) {
     return min + Random().nextDouble() * (max - min);
   }
+}
+
+extension HereMapCameraExtensions on MapCamera {
+  void flyToAreaWithOptionsAndViewRectangle(final GeoBox target, final Rectangle2D viewRectangle, final MapCameraFlyToOptions animationOptions) {
+    final mapCameraUpdate = MapCameraUpdateFactory.lookAtAreaWithViewRectangle(target, viewRectangle);
+    final mapCameraAnimation = MapCameraAnimationFactory.createAnimationFromUpdate(mapCameraUpdate, animationOptions.duration, EasingFunction.linear);
+    startAnimation(mapCameraAnimation);
+  }
+
+  void flyToWithOptimalDistance(final GeoCoordinates target) {
+    flyToWithOptionsAndDistance(target, optimalSelectionDistance, MapCameraFlyToOptions.withDuration(MapConstants.mapAnimationDuration, 0.0));
+  }
+
+  double get optimalSelectionDistance => min(MapConstants.maxSelectionDistance, state.distanceToTargetInMeters);
+}
+
+extension HereMapControllerExtensions on HereMapController {
+  Rectangle2D paddedViewport(final EdgeInsets padding) {
+    final paddingLeftPixels = padding.left * pixelScale;
+    final paddingTopPixels = padding.top * pixelScale;
+    final paddingRightPixels = padding.right * pixelScale;
+    final paddingBottomPixels = padding.bottom * pixelScale;
+
+    final rectangle = Rectangle2D(
+      // a kezopont lesz a kepernyo bal felso sarkatol szamitot [physicalPixel] tavolsagra levo pont
+      Point2D(paddingLeftPixels, paddingTopPixels),
+      // maga a viewport pedig egy akkor meretu doboz ami kezdodik az originbol
+      // es a kepernyo masik oldalan is marad ugyanannyi hely mint amennyire az origin van a saroktol, ezert kell 2x szorzo
+      Size2D(viewportSize.width - paddingLeftPixels - paddingRightPixels, viewportSize.height - paddingTopPixels - paddingBottomPixels),
+    );
+    return rectangle;
+  }
+}
+
+class MapConstants {
+  static const Duration mapAnimationDuration = Duration(milliseconds: 500);
+
+  static const double maxSelectionDistance = 10738.171561101131;
 }
